@@ -154,6 +154,11 @@ HORIZON_DEPENDENT_SCORE_TYPES = (
     ScoreTypes.RELATIVE_LEGACY,
 )
 CLIPPED_SCORES_CACHE_TIMEOUT = 60 * 60 * 24 * 7
+# Leaderboards that concluded (finalize_time, or the project's close_date)
+# before this date keep scoring every question over its full lifetime, so past
+# results, medals and prizes do not change - even on a forced recalculation.
+# Set to the date the tournament-start horizon was introduced.
+HORIZON_CLIPPING_CUTOFF = make_aware(datetime(2026, 11, 6))
 
 
 def _clipped_scores_version_key(question_id: int) -> str:
@@ -182,13 +187,17 @@ def get_leaderboard_horizon_start(leaderboard: Leaderboard) -> datetime | None:
     Only tournaments and question series are clipped, since their start date
     marks the start of the competition. Returns None when no clipping applies:
     other project types (global leaderboards, communities, ...), leaderboards
-    without a start date, and spot-scored leaderboards.
+    without a start date, spot-scored leaderboards, and leaderboards that
+    concluded before HORIZON_CLIPPING_CUTOFF.
     """
     project = leaderboard.project
     if project is None or project.type not in (
         Project.ProjectTypes.TOURNAMENT,
         Project.ProjectTypes.QUESTION_SERIES,
     ):
+        return None
+    concluded_at = leaderboard.finalize_time or project.close_date
+    if concluded_at and concluded_at < HORIZON_CLIPPING_CUTOFF:
         return None
     if leaderboard.score_type in (
         LeaderboardScoreTypes.COMMENT_INSIGHT,

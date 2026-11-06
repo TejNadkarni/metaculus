@@ -15,6 +15,7 @@ from scoring.constants import LeaderboardScoreTypes, ScoreTypes
 from scoring.models import Leaderboard, Score
 from scoring.score_math import evaluate_question
 from scoring.utils import (
+    HORIZON_CLIPPING_CUTOFF,
     get_clipped_question_scores,
     get_contributions,
     get_leaderboard_horizon_start,
@@ -31,6 +32,8 @@ OPEN = datetime_aware(2025, 1, 1)
 TOURNAMENT_START = datetime_aware(2025, 7, 1)
 CLOSE = datetime_aware(2026, 1, 1)
 RESOLVED = datetime_aware(2026, 1, 2)
+# after HORIZON_CLIPPING_CUTOFF, so these leaderboards are clipped
+FINALIZE = datetime_aware(2100, 1, 1)
 
 
 def _question(open_time=OPEN, project=None) -> Question:
@@ -136,7 +139,7 @@ def tournament():
     leaderboard = Leaderboard.objects.create(
         project=project,
         score_type=LeaderboardScoreTypes.PEER_TOURNAMENT,
-        finalize_time=CLOSE + timedelta(days=30),
+        finalize_time=FINALIZE,
     )
     return project, leaderboard
 
@@ -293,14 +296,83 @@ def test_clipped_scores_cache_invalidated_on_rescore():
     ],
 )
 def test_get_leaderboard_horizon_start(project_type, score_type, expected):
-    project = factory_project(type=project_type, start_date=TOURNAMENT_START)
+    project = factory_project(
+        type=project_type, start_date=TOURNAMENT_START, close_date=None
+    )
     leaderboard = Leaderboard(project=project, score_type=score_type)
     assert (get_leaderboard_horizon_start(leaderboard) == TOURNAMENT_START) is expected
 
 
+@pytest.mark.parametrize(
+    "finalize_time,close_date,expected",
+    [
+        (None, None, True),
+        (HORIZON_CLIPPING_CUTOFF + timedelta(days=1), None, True),
+        (HORIZON_CLIPPING_CUTOFF - timedelta(days=1), None, False),
+        (None, HORIZON_CLIPPING_CUTOFF + timedelta(days=1), True),
+        (None, HORIZON_CLIPPING_CUTOFF - timedelta(days=1), False),
+        # finalize_time takes precedence over the project's close_date
+        (
+            HORIZON_CLIPPING_CUTOFF + timedelta(days=1),
+            HORIZON_CLIPPING_CUTOFF - timedelta(days=1),
+            True,
+        ),
+    ],
+)
+def test_leaderboards_concluded_before_cutoff_are_not_clipped(
+    finalize_time, close_date, expected
+):
+    project = factory_project(
+        type=Project.ProjectTypes.TOURNAMENT,
+        start_date=TOURNAMENT_START,
+        close_date=close_date,
+    )
+    leaderboard = Leaderboard(
+        project=project,
+        score_type=LeaderboardScoreTypes.PEER_TOURNAMENT,
+        finalize_time=finalize_time,
+    )
+    assert (get_leaderboard_horizon_start(leaderboard) == TOURNAMENT_START) is expected
+
+
+def test_past_tournament_keeps_full_lifetime_scores_on_force_update():
+    project = factory_project(
+        type=Project.ProjectTypes.TOURNAMENT,
+        start_date=TOURNAMENT_START,
+        close_date=None,
+    )
+    leaderboard = Leaderboard.objects.create(
+        project=project,
+        score_type=LeaderboardScoreTypes.PEER_TOURNAMENT,
+        finalize_time=HORIZON_CLIPPING_CUTOFF - timedelta(days=1),
+        finalized=True,
+    )
+    users = [factory_user() for _ in range(3)]
+    question = _question(project=project)
+    _add_forecasts(question, users)
+    score_question(question, "yes")
+    stored = {
+        s.user_id: s
+        for s in Score.objects.filter(question=question, score_type=ScoreTypes.PEER)
+        if s.user_id
+    }
+
+    entries = update_project_leaderboard(project, leaderboard, force_update=True)
+    for entry in entries:
+        if entry.user_id:
+            assert entry.coverage == pytest.approx(stored[entry.user_id].coverage)
+    for user in users:
+        (contribution,) = [
+            c for c in get_contributions(user, leaderboard) if c.score is not None
+        ]
+        assert contribution.coverage == pytest.approx(stored[user.id].coverage)
+
+
 def test_leaderboard_start_time_overrides_project_start_date():
     project = factory_project(
-        type=Project.ProjectTypes.TOURNAMENT, start_date=TOURNAMENT_START
+        type=Project.ProjectTypes.TOURNAMENT,
+        start_date=TOURNAMENT_START,
+        close_date=None,
     )
     later = TOURNAMENT_START + timedelta(days=5)
     leaderboard = Leaderboard(
