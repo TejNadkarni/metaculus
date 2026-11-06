@@ -179,11 +179,16 @@ def get_leaderboard_horizon_start(leaderboard: Leaderboard) -> datetime | None:
     opened at the leaderboard's start_time (or the project's start_date). The
     question's own stored scores are unchanged.
 
-    Returns None when no clipping applies: global leaderboards, leaderboards
-    without a project or start date, and spot-scored leaderboards.
+    Only tournaments and question series are clipped, since their start date
+    marks the start of the competition. Returns None when no clipping applies:
+    other project types (global leaderboards, communities, ...), leaderboards
+    without a start date, and spot-scored leaderboards.
     """
     project = leaderboard.project
-    if project is None or project.type == Project.ProjectTypes.SITE_MAIN:
+    if project is None or project.type not in (
+        Project.ProjectTypes.TOURNAMENT,
+        Project.ProjectTypes.QUESTION_SERIES,
+    ):
         return None
     if leaderboard.score_type in (
         LeaderboardScoreTypes.COMMENT_INSIGHT,

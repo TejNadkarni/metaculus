@@ -283,6 +283,12 @@ def test_clipped_scores_cache_invalidated_on_rescore():
             LeaderboardScoreTypes.SPOT_BASELINE_TOURNAMENT,
             False,
         ),
+        (
+            Project.ProjectTypes.QUESTION_SERIES,
+            LeaderboardScoreTypes.PEER_TOURNAMENT,
+            True,
+        ),
+        (Project.ProjectTypes.COMMUNITY, LeaderboardScoreTypes.PEER_TOURNAMENT, False),
         (Project.ProjectTypes.SITE_MAIN, LeaderboardScoreTypes.PEER_GLOBAL, False),
     ],
 )

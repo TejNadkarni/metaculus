@@ -1039,9 +1039,9 @@ export default async function ScoresFAQ() {
         The Coverage is used in tournaments, to incentivize early predictions.
       </p>
       <p>
-        If a tournament includes a question that opened before the tournament
-        started, that question&apos;s tournament Score and Coverage only count
-        the time since the tournament started. Its Scores on the question page
+        If a tournament or question series includes a question that opened
+        before it started, that question&apos;s tournament Score and Coverage
+        only count the time since the tournament started. Its Scores on the question page
         still count its whole lifetime.
       </p>
 
